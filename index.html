@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- SEO -->
+  <title>Emotropy — Emotion-Driven Particle Simulation</title>
+  <meta name="description"
+    content="Type how you feel — in any words, any length. Emotropy detects your emotion across 15 feeling states and renders it as a real-time particle physics simulation with somatic sensation suggestions." />
+  <meta name="theme-color" content="#080814" />
+
+  <!-- Preconnect for Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+
+  <!--
+    ╔══════════════════════════════════════════╗
+    ║  Full-screen canvas for the particle sim ║
+    ╚══════════════════════════════════════════╝
+    Positioned fixed behind all UI layers (z-index: 0).
+    main.js writes to this every requestAnimationFrame.
+  -->
+  <canvas id="emotropy-canvas" aria-hidden="true"></canvas>
+
+  <!--
+    ╔══════════════════════════════════════════╗
+    ║  App shell: header + badge + input panel ║
+    ╚══════════════════════════════════════════╝
+  -->
+  <div id="app">
+
+    <header role="banner">
+      <h1 class="logo">Emotropy</h1>
+      <p class="tagline">The Physics of Feeling</p>
+    </header>
+
+    <!-- ── Emotion badge (centred, reflects current emotion)── -->
+    <!--
+      Displays the dominant emotion icon, label, and confidence bar.
+      main.js updates these on every submit via updateEmotionUI().
+    -->
+    <section id="emotion-badge" aria-live="polite" aria-label="Detected emotion">
+      <span id="emotion-label">Waiting…</span>
+      <div id="confidence-container" title="Emotion confidence">
+        <div id="confidence-bar-fill"></div>
+      </div>
+    </section>
+
+    <!-- ── Body sensation suggestion panel ───────────────────── -->
+    <!--
+      Appears after each submit. Shows 4 somatic sensations the user
+      might be feeling based on the detected emotion blend.
+      Hidden by default; main.js adds class 'visible' to show it.
+    -->
+    <section id="sensation-panel" aria-live="polite" aria-label="Body sensations">
+      <p id="sensation-heading">You might also feel in your body:</p>
+      <div id="sensation-tags" role="list" aria-label="Suggested body sensations"></div>
+    </section>
+
+    <!--
+      The form collects user text; JavaScript intercepts submit
+      without a page reload, detects emotion, and spawns particles.
+    -->
+    <section id="input-panel">
+      <form id="emotion-form" autocomplete="off" novalidate>
+        <div id="input-wrapper">
+          <textarea id="emotion-input" name="emotionText" rows="1" maxlength="500"
+            placeholder="Type your feelings to watch them become physics…" aria-label="Describe how you feel"
+            autofocus></textarea>
+          <button id="submit-btn" type="submit" aria-label="Submit text and generate particle simulation">
+            Feel It
+          </button>
+        </div>
+        <p id="input-hint">press Enter or click Feel It · Shift+Enter for new line</p>
+      </form>
+    </section>
+
+  </div><!-- /#app -->
+
+  <script type="module" src="main.js"></script>
+
+</body>
+
+</html>
