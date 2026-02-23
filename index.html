@@ -35,7 +35,7 @@
     ║  App shell: header + badge + input panel ║
     ╚══════════════════════════════════════════╝
   -->
-  <div id="app">
+  <div id="app" class="state-initial">
 
     <header role="banner">
       <h1 class="logo">Emotropy</h1>
@@ -48,7 +48,7 @@
       main.js updates these on every submit via updateEmotionUI().
     -->
     <section id="emotion-badge" aria-live="polite" aria-label="Detected emotion">
-      <span id="emotion-label">Waiting…</span>
+      <span id="emotion-label"></span>
       <div id="confidence-container" title="Emotion confidence">
         <div id="confidence-bar-fill"></div>
       </div>
@@ -72,9 +72,8 @@
     <section id="input-panel">
       <form id="emotion-form" autocomplete="off" novalidate>
         <div id="input-wrapper">
-          <textarea id="emotion-input" name="emotionText" rows="1" maxlength="500"
-            placeholder="Type your feelings to watch them become physics…" aria-label="Describe how you feel"
-            autofocus></textarea>
+          <textarea id="emotion-input" name="emotionText" rows="1" maxlength="5000" placeholder="Type your feelings…"
+            aria-label="Describe how you feel" autofocus></textarea>
           <button id="submit-btn" type="submit" aria-label="Submit text and generate particle simulation">
             Feel It
           </button>

@@ -67,13 +67,22 @@ body {
 #app {
   position: fixed;
   inset: 0;
+  height: 100dvh;
+  /* Better mobile viewport support */
   z-index: 10;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: space-between;
-  padding: 4vh 24px 6vh;
+  padding: clamp(24px, 5vh, 60px) 20px clamp(24px, 8vh, 100px);
   pointer-events: none;
+  transition: justify-content var(--transition-smooth), gap var(--transition-smooth);
+}
+
+#app.state-initial {
+  justify-content: center;
+  gap: 20px;
+  /* Closer as requested */
 }
 
 /* ── Header ───────────────────────────────────────────────── */
@@ -81,6 +90,7 @@ header {
   pointer-events: none;
   text-align: center;
   animation: float 10s ease-in-out infinite;
+  transition: transform var(--transition-smooth), margin var(--transition-smooth);
 }
 
 @keyframes float {
@@ -125,8 +135,81 @@ header {
   align-items: center;
   gap: 16px;
   user-select: none;
-  max-width: 80vw;
+  max-width: 90vw;
   text-align: center;
+  opacity: 1;
+  /* Changed from 0 to fix result visibility */
+  transform: scale(1);
+  transition: opacity var(--transition-smooth), transform var(--transition-smooth);
+}
+
+.state-initial #emotion-badge {
+  display: none;
+}
+
+/* ── Analyzing / Loading State ───────────────────────────── */
+#emotion-badge.analyzing {
+  opacity: 1;
+  height: auto;
+  transform: scale(1);
+}
+
+#emotion-badge.analyzing #emotion-label::before {
+  content: 'Analyzing';
+  font-size: 14px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.4em;
+  color: var(--text-muted);
+  animation: loadingDots 1.5s infinite;
+}
+
+@keyframes loadingDots {
+  0% {
+    content: 'Analyzing';
+    opacity: 0.4;
+  }
+
+  33% {
+    content: 'Analyzing.';
+    opacity: 0.7;
+  }
+
+  66% {
+    content: 'Analyzing..';
+    opacity: 1;
+  }
+
+  100% {
+    content: 'Analyzing...';
+    opacity: 0.4;
+  }
+}
+
+#emotion-badge.analyzing #confidence-container {
+  overflow: visible;
+  background: transparent;
+}
+
+#emotion-badge.analyzing #confidence-bar-fill {
+  width: 100% !important;
+  background: var(--text-dim);
+  box-shadow: 0 0 15px var(--text-dim);
+  animation: scan 1.5s ease-in-out infinite;
+}
+
+@keyframes scan {
+
+  0%,
+  100% {
+    transform: scaleX(0.1);
+    opacity: 0.2;
+  }
+
+  50% {
+    transform: scaleX(1);
+    opacity: 0.8;
+  }
 }
 
 #emotion-label {
@@ -160,13 +243,19 @@ header {
 #input-panel {
   pointer-events: all;
   width: 100%;
-  max-width: 680px;
+  max-width: clamp(280px, 92vw, 680px);
+  transition: transform var(--transition-smooth), margin var(--transition-smooth);
 }
 
 #emotion-form {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  transition: gap var(--transition-smooth);
+}
+
+.diary-mode #emotion-form {
+  gap: 24px;
 }
 
 #input-wrapper {
@@ -205,12 +294,23 @@ header {
   font-size: 16px;
   font-weight: 400;
   color: var(--text-main);
-  line-height: 1.5;
-  max-height: 120px;
+  line-height: 1.6;
+  max-height: 240px;
+  /* Increased for diary mode */
   min-height: 24px;
   padding: 12px 0;
-  scrollbar-width: none;
   caret-color: var(--text-main);
+  transition: height 0.1s ease-out;
+  overflow-y: auto;
+}
+
+#emotion-input::-webkit-scrollbar {
+  width: 4px;
+}
+
+#emotion-input::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+  border-radius: 10px;
 }
 
 #emotion-input::placeholder {
@@ -273,6 +373,10 @@ header {
   transition: var(--transition-smooth);
 }
 
+.state-initial #sensation-panel {
+  display: none;
+}
+
 #sensation-panel.visible {
   opacity: 1;
   transform: translateY(0);
@@ -301,15 +405,38 @@ header {
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  cursor: pointer;
+  pointer-events: auto;
 
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: var(--tag-color, var(--text-main));
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  outline: none;
 
   opacity: 0;
   transform: translateY(10px);
   animation: tagEnter 0.6s var(--ease-out) forwards;
+  transition: transform 0.2s var(--ease-out),
+    background 0.2s var(--ease-out),
+    border-color 0.2s var(--ease-out),
+    box-shadow 0.2s var(--ease-out);
+}
+
+.sensation-tag:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--tag-color);
+  transform: translateY(-2px) !important;
+  /* Override animation drift */
+  box-shadow: 0 0 20px var(--tag-glow);
+}
+
+.sensation-tag:active {
+  transform: scale(0.94) translateY(0) !important;
+}
+
+.sensation-tag:focus-visible {
+  box-shadow: 0 0 0 2px var(--tag-color);
 }
 
 /* Stagger & micro-drift for tags */
@@ -394,15 +521,78 @@ header {
 
 @media (max-width: 600px) {
   #app {
-    padding: 3vh 20px 4vh;
+    padding: 5vh 16px 3vh;
+  }
+
+  #app.state-initial {
+    gap: 8px;
+  }
+
+  #emotion-form {
+    gap: 12px;
   }
 
   #input-wrapper {
-    padding-left: 18px;
+    display: contents;
+    /* Allows children to use form's flex-column gap */
   }
 
+  #emotion-input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px 18px;
+    font-size: 16px;
+    width: 100%;
+    max-height: 140px;
+    text-align: left;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Separate button implementation */
   #submit-btn {
-    padding: 12px 20px;
-    font-size: 13px;
+    width: 100%;
+    padding: 16px;
+    font-size: 14px;
+    border-radius: var(--radius-md);
+    background: var(--text-main);
+    color: var(--bg);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  #input-hint {
+    display: none;
+  }
+
+  .logo {
+    font-size: 36px;
+  }
+
+  .tagline {
+    font-size: 11px;
+    margin-top: 4px;
+  }
+}
+
+@media (max-height: 500px) {
+  #app {
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+
+  .logo {
+    font-size: 32px;
+  }
+
+  .tagline {
+    display: none;
+  }
+
+  #emotion-badge {
+    gap: 8px;
+  }
+
+  #emotion-label {
+    font-size: 28px;
   }
 }

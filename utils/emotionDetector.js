@@ -261,82 +261,118 @@ function tokenise(text) {
 const BLEND_THRESHOLD = 0.16;
 
 // ── Core Detector ────────────────────────────────────────────
+// ── Context Transitions ──────────────────────────────────────
+const TRANSITION_WORDS = new Set([
+    'but', 'however', 'yet', 'nevertheless', 'though', 'nonetheless',
+    'alternatively', 'instead', 'otherwise', 'even though'
+]);
+
+// ── Sentential Analysis Helpers ───────────────────────────────
+function splitToSentences(text) {
+    // Regex matches . ! ? followed by space or end of string
+    return text.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+}
+
 /**
- * Detects all significant emotions in a piece of text — works
- * equally well on a single word, sentence, or full paragraph.
- *
- * Smart features:
- *   • Intensifiers ("very anxious") multiply the matched weight
- *   • Negations ("not happy") redistribute score to opponents
- *   • Paragraph normalisation means longer text doesn't disadvantage short
- *   • Returns a blend array of all emotions above BLEND_THRESHOLD
- *
- * @param   {string} text
- * @returns {{ emotion, confidence, scores, blend, bodily }}
+ * Core detector upgraded for long-form context ("Diary Mode").
+ * 
+ * New Logic:
+ * 1. Split text into sentences.
+ * 2. Score each sentence independently.
+ * 3. Apply a "Recency Bias" (sentences at the end of a journal entry 
+ *    often represent the current state more than the start).
+ * 4. Detect "But/However" shifts to prioritize the new sentiment.
  */
 export function detectEmotion(text) {
     if (!text || text.trim().length === 0) {
-        return { emotion: 'joy', confidence: 0.5, scores: {}, blend: [{ emotion: 'joy', weight: 1 }], bodily: 1 };
+        return { emotion: 'joy', confidence: 0.5, scores: {}, blend: [{ emotion: 'joy', weight: 1 }], bodily: 1, total: 0 };
     }
 
-    const tokens = tokenise(text);
-
-    // Initialise scores for all 15 emotion categories
-    const scores = {
+    const sentences = splitToSentences(text);
+    const aggregatedScores = {
         joy: 0, calm: 0, anger: 0, fear: 0, anxiety: 0,
         sadness: 0, shame: 0, gratitude: 0, courage: 0,
         hopeful: 0, disconnected: 0, stress: 0,
         powerless: 0, unsettled: 0, tender: 0
     };
 
-    let bodilySum = 0;
-    let bodilyCount = 0;
+    let totalBodilySum = 0;
+    let totalBodilyCount = 0;
+    let totalWeight = 0;
 
-    for (let i = 0; i < tokens.length; i++) {
-        const token = tokens[i];
+    sentences.forEach((sentence, index) => {
+        const tokens = tokenise(sentence);
+        const sentenceScores = { ...aggregatedScores }; // Zeroed template
+        Object.keys(sentenceScores).forEach(k => sentenceScores[k] = 0);
 
-        // Context flags (look back 1–2 positions)
-        const prevOne = i >= 1 ? tokens[i - 1] : '';
-        const prevTwo = i >= 2 ? tokens[i - 2] : '';
+        let sentenceBodilySum = 0;
+        let sentenceBodilyCount = 0;
+        let containsTransition = false;
 
-        const isNegated = NEGATION_WORDS.has(prevOne) || NEGATION_WORDS.has(prevTwo);
-        const isIntensified = INTENSIFIERS.has(prevOne) || INTENSIFIERS.has(prevTwo);
-        const intensityMult = isIntensified ? 1.5 : 1.0;
+        // 1. Process tokens for this sentence
+        for (let i = 0; i < tokens.length; i++) {
+            const token = tokens[i];
 
-        // Score all emotion lexicons
-        for (const [emotion, lexicon] of Object.entries(LEXICONS)) {
-            if (token in lexicon) {
-                const weight = lexicon[token] * intensityMult;
-                if (isNegated) {
-                    // Flip to "opponent" signal — spread across others minus self
-                    const opponents = Object.keys(scores).filter(e => e !== emotion);
-                    opponents.forEach(opp => { scores[opp] += weight * 0.15; });
-                } else {
-                    scores[emotion] += weight;
+            if (TRANSITION_WORDS.has(token)) containsTransition = true;
+
+            const prevOne = i >= 1 ? tokens[i - 1] : '';
+            const prevTwo = i >= 2 ? tokens[i - 2] : '';
+
+            const isNegated = NEGATION_WORDS.has(prevOne) || NEGATION_WORDS.has(prevTwo);
+            const isIntensified = INTENSIFIERS.has(prevOne) || INTENSIFIERS.has(prevTwo);
+            const intensityMult = isIntensified ? 1.6 : 1.0;
+
+            for (const [emotion, lexicon] of Object.entries(LEXICONS)) {
+                if (token in lexicon) {
+                    const weight = lexicon[token] * intensityMult;
+                    if (isNegated) {
+                        const opponents = Object.keys(sentenceScores).filter(e => e !== emotion);
+                        opponents.forEach(opp => { sentenceScores[opp] += weight * 0.2; });
+                    } else {
+                        sentenceScores[emotion] += weight;
+                    }
                 }
+            }
+
+            if (token in BODILY_LEXICON) {
+                sentenceBodilySum += BODILY_LEXICON[token];
+                sentenceBodilyCount++;
             }
         }
 
-        // Bodily lexicon (unaffected by negation)
-        if (token in BODILY_LEXICON) {
-            bodilySum += BODILY_LEXICON[token];
-            bodilyCount++;
+        // 2. Apply Recency Bias + Transition Boost
+        // Later sentences are weighted more (up to 2x weight).
+        // Sentences following a "BUT" get a 1.3x boost to their unique signal.
+        const positionWeight = 1.0 + (index / (sentences.length || 1)) * 1.0;
+        const transitionBoost = containsTransition ? 1.3 : 1.0;
+        const finalSentenceWeight = positionWeight * transitionBoost;
+
+        Object.keys(sentenceScores).forEach(emo => {
+            aggregatedScores[emo] += sentenceScores[emo] * finalSentenceWeight;
+        });
+
+        if (sentenceBodilyCount > 0) {
+            totalBodilySum += (sentenceBodilySum / sentenceBodilyCount) * finalSentenceWeight;
+            totalBodilyCount += finalSentenceWeight;
         }
-    }
+
+        totalWeight += finalSentenceWeight;
+    });
+
+    // ── Aggregation ──
 
     // Bodily intensity: clamped 0.8 → 2.0
-    const bodily = bodilyCount > 0
-        ? Math.min(2, 0.8 + (bodilySum / bodilyCount) * 0.6)
+    const bodily = totalBodilyCount > 0
+        ? Math.min(2.2, 0.8 + (totalBodilySum / totalBodilyCount) * 0.7)
         : 1;
 
-    // Build normalised weights
-    const total = Object.values(scores).reduce((s, v) => s + v, 0);
+    const total = Object.values(aggregatedScores).reduce((s, v) => s + v, 0);
 
     if (total === 0) {
-        return { emotion: 'joy', confidence: 0.3, scores, blend: [{ emotion: 'joy', weight: 1 }], bodily };
+        return { emotion: 'joy', confidence: 0, scores: aggregatedScores, blend: [], bodily, total: 0 };
     }
 
-    const normalised = Object.entries(scores)
+    const normalised = Object.entries(aggregatedScores)
         .map(([e, s]) => ({ emotion: e, weight: s / total }))
         .sort((a, b) => b.weight - a.weight);
 
@@ -349,5 +385,12 @@ export function detectEmotion(text) {
 
     if (blend.length === 0) blend.push({ emotion: top.emotion, weight: 1 });
 
-    return { emotion: top.emotion, confidence: top.weight, scores, blend, bodily };
+    return {
+        emotion: top.emotion,
+        confidence: top.weight,
+        scores: aggregatedScores,
+        blend,
+        bodily,
+        total
+    };
 }

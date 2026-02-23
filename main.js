@@ -13,6 +13,7 @@ import { Particle } from './particles/Particle.js';
 import { detectEmotion } from './utils/emotionDetector.js';
 import { EMOTION_CONFIG, IDLE_CONFIG, EMOTION_META } from './utils/emotionConfig.js';
 import { getSensationSuggestions } from './utils/bodySensationMapper.js';
+import { getPhysicsForSensation } from './utils/sensationPhysicsMapper.js';
 
 // ── Canvas setup ──────────────────────────────────────────────
 const canvas = document.getElementById('emotropy-canvas');
@@ -71,6 +72,7 @@ const confidenceEl = document.getElementById('confidence-bar-fill');
 const badge = document.getElementById('emotion-badge');
 const sensationPanel = document.getElementById('sensation-panel');
 const sensationTags = document.getElementById('sensation-tags');
+const appContainer = document.getElementById('app');
 
 // ── Spawn particles — blended multi-emotion ───────────────────
 /**
@@ -227,16 +229,68 @@ function updateSensationUI(blend, dominantColor) {
     suggestions.forEach(label => {
         const tag = document.createElement('span');
         tag.className = 'sensation-tag';
-        tag.role = 'listitem';
+        tag.role = 'button';
+        tag.tabIndex = 0;
         tag.textContent = label;
+        tag.style.cursor = 'pointer';
+        tag.style.pointerEvents = 'auto'; // Re-enable clicks
+
         // Set CSS variables for this emotion's colour
         tag.style.setProperty('--tag-color', dominantColor);
-        tag.style.setProperty('--tag-glow', dominantColor + '33'); // 20% alpha glow
+        tag.style.setProperty('--tag-glow', dominantColor + '33');
+
+        tag.addEventListener('click', (e) => {
+            e.stopPropagation();
+            spawnSensation(label, e.clientX, e.clientY);
+
+            // Visual feedback on click
+            tag.style.transform = 'scale(0.9) translateY(0)';
+            setTimeout(() => tag.style.transform = '', 100);
+        });
+
+        tag.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                tag.click();
+            }
+        });
+
         sensationTags.appendChild(tag);
     });
 
-    // Make panel visible (CSS transition handles fade-in)
+    // Make panel visible
     sensationPanel.classList.add('visible');
+}
+
+/**
+ * Spawns a burst of particles for a specific physical sensation.
+ * @param {string} label 
+ * @param {number} x 
+ * @param {number} y 
+ */
+function spawnSensation(label, x, y) {
+    const profile = getPhysicsForSensation(label);
+    const count = 35;
+
+    // Use click position or centre
+    const spawnX = x ?? canvas.width / 2;
+    const spawnY = y ?? (canvas.height / 2 + 100);
+
+    for (let i = 0; i < count; i++) {
+        const config = {
+            ...profile,
+            size: (profile.size ?? 4) * 0.8,
+            lifespan: (profile.lifespan ?? 200) * 0.7,
+            trail: 6
+        };
+        const p = new Particle(spawnX, spawnY, config);
+        // Add random velocity blast
+        const angle = Math.random() * Math.PI * 2;
+        const mag = Math.random() * 4 + 2;
+        p.vx += Math.cos(angle) * mag;
+        p.vy += Math.sin(angle) * mag;
+        particles.push(p);
+    }
 }
 
 
@@ -246,28 +300,78 @@ form.addEventListener('submit', (e) => {
     if (!text) return;
 
     // Detect with full blend + bodily output
-    const { emotion, confidence, blend, bodily } = detectEmotion(text);
+    const { emotion, confidence, blend, bodily, total } = detectEmotion(text);
 
-    // Update badge (shows compound label for blends)
-    updateEmotionUI(emotion, confidence, blend);
+    // Transition from initial state if needed
+    const isFirstSubmit = appContainer.classList.contains('state-initial');
+    if (isFirstSubmit) {
+        appContainer.classList.remove('state-initial');
+    }
 
-    // Spawn proportional blend of particles
-    const totalSpawn = blend.length > 1 ? 160 : 120;
-    spawnBlend(blend, totalSpawn, bodily);
+    // Show loading state
+    badge.classList.add('analyzing');
+    emotionLabel.textContent = ''; // Clear label to show the 'Analyzing' pseudo-content
 
-    // Lock UI until particles clear
-    uiLocked = true;
-    submitBtn.disabled = true;
-    textInput.disabled = true;
+    const resultDelay = isFirstSubmit ? 800 : 400;
 
-    // Button feedback remains disabled until particles cleared in animate()
-    submitBtn.textContent = 'Visualizing…';
-    textInput.value = '';
-    textInput.placeholder = 'Wait for current feeling to fade…';
+    setTimeout(() => {
+        badge.classList.remove('analyzing');
 
-    // Show body sensation suggestions
-    updateSensationUI(blend, EMOTION_CONFIG[emotion]?.color ?? '#FFFFFF');
+        if (total === 0) {
+            // Clarification system: System isn't sure
+            emotionLabel.textContent = 'Unclear';
+            emotionLabel.style.color = 'var(--text-muted)';
+            confidenceEl.style.width = '0%';
+
+            // Ask for clarification
+            textInput.value = '';
+            textInput.placeholder = 'Could you describe that feeling more deeply?';
+            submitBtn.textContent = 'Feel It';
+            submitBtn.disabled = false;
+            textInput.disabled = false;
+            uiLocked = false;
+            return;
+        }
+
+        // Lock UI until particles clear (only if we actually spawn results)
+        uiLocked = true;
+        submitBtn.disabled = true;
+        textInput.disabled = true;
+
+        // Update badge (shows compound label for blends)
+        updateEmotionUI(emotion, confidence, blend);
+
+        // Spawn proportional blend of particles
+        const totalSpawn = blend.length > 1 ? 160 : 120;
+        spawnBlend(blend, totalSpawn, bodily);
+
+        // Show body sensation suggestions
+        updateSensationUI(blend, EMOTION_CONFIG[emotion]?.color ?? '#FFFFFF');
+
+        // Button feedback
+        submitBtn.textContent = 'Visualizing…';
+        textInput.value = '';
+        textInput.style.height = 'auto'; // Reset height
+        textInput.placeholder = 'Wait for current feeling to fade…';
+        appContainer.classList.remove('diary-mode');
+    }, resultDelay);
 });
+
+// ── Diary Mode: Auto-growing Textarea ─────────────────────────
+function autoGrow() {
+    textInput.style.height = 'auto';
+    const newHeight = Math.min(textInput.scrollHeight, 240); // Max grow to 240px
+    textInput.style.height = newHeight + 'px';
+
+    // Toggle a 'diary-active' class for styling when text is long
+    if (textInput.value.length > 100) {
+        appContainer.classList.add('diary-mode');
+    } else {
+        appContainer.classList.remove('diary-mode');
+    }
+}
+
+textInput.addEventListener('input', autoGrow);
 
 // Enter to submit (Shift+Enter for newline)
 textInput.addEventListener('keydown', (e) => {
@@ -364,7 +468,7 @@ function animate() {
         submitBtn.disabled = false;
         textInput.disabled = false;
         submitBtn.textContent = 'Feel It';
-        textInput.placeholder = 'Type your feelings to watch them become physics…';
+        textInput.placeholder = 'Type your feelings…';
         textInput.focus();
     }
 
